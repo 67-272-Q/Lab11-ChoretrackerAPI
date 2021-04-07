@@ -1,5 +1,5 @@
-#Objectives
-
+Objectives
+-
 - Creating the API itself
 - Documenting the API with swagger docs
 - Serialization Customizations
@@ -11,13 +11,17 @@
 
 ## Part 1 - Building the API
 
-1. We will not be using any starter code for this application since everything will be built from scratch to help you understand the full process. First of all create a new rails application using the api flag and call it ChoreTrackerAPI. The api flag allows rails to know how the application is intended to be used and will make sure to set up the right things in order to make the application RESTful.
+1. We will not be using any starter code for this application since everything will be built from scratch to help you understand the full process. 
+
+	First of all create a new rails application using the api flag and call it ChoreTrackerAPI. The api flag allows rails to know how the application is intended to be used and will make sure to set up the right things in order to make the application RESTful.
 
   ```
   $ rails new ChoreTrackerAPI --api
   ```
 
-2. Just like the ChoreTracker app that you have built before, there will be 3 main entities to the ChoreTracker application, please review the old lab if you want any clarifications on the ERD. The following are the data dictionaries for the 3 models. Based on these specifications, please generate all the models with all the proper fields and then run ```rails db:migrate```. This step should be the same as if you were building a regular rails application. (ex. `rails generate model Child first_name:string last_name:string active:boolean`)
+2. Just like the ChoreTracker app that you have built before in Lab 7, there will be 3 main entities to the ChoreTracker API, please review [Lab 7](https://github.com/67-272-Q/lab7-chore-tracker-starter), if you need any clarifications on the ERD. 
+
+	The following are the data dictionaries for the 3 models. Based on these specifications, please generate all the models with all the proper fields and then run ```rails db:migrate``` to create the corresponding tables. This step should be the same as if you were building a regular rails application. (ex. `rails generate model Child first_name:string last_name:string active:boolean`)
     - Child
         - first_name (string)
         - last_name (string)
@@ -92,7 +96,8 @@
 
 4. Now we will be starting to build out the controllers for the models that we just made. First, let's create a file called `children_controller.rb` in the controllers folder (you can also run `rails generate controller Children`), define the class `class ChildrenController < ApplicationController ... end` and follow along below!
 
-5. As you remember, we will not be building any views since literally all user output from a RESTful API is just JSON (no need for HTML/CSS/JS). First, let's go through the process of creating the controller for the Child model and then you will need to **create the controllers for the other 2 models**. So unlike in a normal Rails application, in a RESTful one, you will only need 5 (**index, show, create, update, and destroy**) actions instead of 7. We won't be needing the new or edit action since those were only used to display the form, and with only JSON responses, the form will no longer be needed.  (Note: One thing to note here is the idea of the status code. This is especially important when developing a RESTful API to tell users of it what happened. All success type codes (ok, created, etc.) are in the 200 number ranges, and generally other error statuses are either in the 400 or 500 ranges.)
+5. As you remember, we will not be building any views since literally all user output from a RESTful API is just JSON (no need for HTML/CSS/JS). First, let's go through the process of creating the controller for the Child model and then you will need to **create the controllers for the other 2 models**. So unlike in a normal Rails application, in a RESTful one, you will only need 5 (**index, show, create, update, and destroy**) actions instead of 7. We won't be needing the new or edit action since those were only used to display the form, and with only JSON responses, the form will no longer be needed.
+	**Note**: One thing to note here is the idea of the status code. This is especially important when developing a RESTful API to tell users of it what happened. All success type codes (ok, created, etc.) are in the 200 number ranges, and generally other error statuses are either in the 400 or 500 ranges.
 
 6. Index Action (responds to GET) is used to display all of the children that exist and its information/fields. So in this case all you need is to render all of the children objects as json.
   
@@ -303,10 +308,10 @@ Now that you have created the API you will need to document it. Documentation is
   $ cd public/
   ```
 
-13. Then include the Swagger UI in the public folder as a git submodule under the folder name api/. You should now have a folder under public/api/ where all of swagger ui files (html, css, javascript) will be.
+13. Then include the Swagger UI available [here](https://github.com/cmu-is-projects/RailsSwaggerUI) in the public/ folder under a folder named api/. You should now have a folder under public/api/ where all of swagger ui files (html, css, javascript) will be.
 
   ```
-  $ git submodule add https://github.com/cmu-is-projects/RailsSwaggerUI api
+  $ git clone https://github.com/cmu-is-projects/RailsSwaggerUI
   ```
 
 14. Start up your server and then go to `http://localhost:3000/api` and you should see something like this:
