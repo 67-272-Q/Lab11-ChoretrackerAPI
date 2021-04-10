@@ -308,11 +308,16 @@ Now that you have created the API you will need to document it. Documentation is
   $ cd public/
   ```
 
-13. Then include the Swagger UI available [here](https://github.com/cmu-is-projects/RailsSwaggerUI) in the public/ folder under a folder named api/. You should now have a folder under public/api/ where all of swagger ui files (html, css, javascript) will be.
+13. Then include the Swagger UI available [here](https://github.com/cmu-is-projects/RailsSwaggerUI) in the public/ folder under a folder named api/. You should now have a folder under public/api/ where all of swagger ui files (html, css, javascript) will be. 
 
   ```
   $ git clone https://github.com/cmu-is-projects/RailsSwaggerUI
   ```
+  
+	Make sure you have the api folder contains the 'index.htm' file. 
+The api folder should be as follows:
+
+ ![](api.png)
 
 14. Start up your server and then go to `http://localhost:3000/api` and you should see something like this:
 
