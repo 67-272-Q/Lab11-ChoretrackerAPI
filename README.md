@@ -1,346 +1,39 @@
 Objectives
 -
-- Creating the API itself
-- Documenting the API with swagger docs
-- Serialization Customizations
+
+- Learn Serialization Customizations
 - Handling CORS
+- Filtering and Ordering the index action
+- Stateless authentication for the API
 
---
+Due Date:
+-
 
-# Implementing the ChoreTracker API with Documentation and Serialization
+**March 24, 2022** by the end of your lab session!
 
-## Part 1 - Building the API
+Important Note
+===============
 
-1. We will not be using any starter code for this application since everything will be built from scratch to help you understand the full process. 
+In this lab, you have a total of **4 checkpoints** to validate with one of the teaching team members during the lab session.
 
-	First of all create a new rails application using the api flag and call it ChoreTrackerAPI. The api flag allows rails to know how the application is intended to be used and will make sure to set up the right things in order to make the application RESTful.
+Checkpoints will be graded as follows:
 
-  ```
-  $ rails new ChoreTrackerAPI --api
-  ```
+- Checkpoint 1: 30 points
+- Checkpoint 2: 20 points
+- Checkpoint 3: 25 points
+- Checkpoint 4: 25 points
 
-2. Just like the ChoreTracker app that you have built before in Lab 7, there will be 3 main entities to the ChoreTracker API, please review [Lab 7](https://github.com/67-272-Q/lab7-chore-tracker-starter), if you need any clarifications on the ERD. 
+**If you have any issues with swagger docs not working properly - clear your cache. In Google Chrome, a hard reload should work.**
 
-	The following are the data dictionaries for the 3 models. Based on these specifications, please generate all the models with all the proper fields and then run ```rails db:migrate``` to create the corresponding tables. This step should be the same as if you were building a regular rails application. (ex. `rails generate model Child first_name:string last_name:string active:boolean`)
-    - Child
-        - first_name (string)
-        - last_name (string)
-        - active (boolean)
-    - Task
-        - name (string)
-        - points (integer)
-        - active (boolean)
-    - Chore
-        - child (references)
-        - task (references)
-        - due_on (date)
-        - completed (boolean)
+## Part 1 - API Custom Serialization
 
-3. Now add in the model code below for each of the models. The code here is exactly the same as what you have done in the old ChoreTracker Application, which is why we won't require you to rewrite everything! (**Note: don't forget to add the validates_timeliness gem to the Gemfile, run** `bundle install` **and the run the** `rails generate validates_timeliness:install` **command in order to get some of the validations to work.**)
+1. In Lab 8, last week, we created the barebone API for ChoreTracker and documenting it using Swagger-docs and Swagger-UI. The Basic API as well as the SAwagger-docs are already provided to you in this starter code. But, there are a lot more things you can do to improve it and make it more usable. One main thing is **serialization**, which is how Rails converts a Child/Task/Chore model object to JSON. With serializers, you can truly customize how you want these objects to show up in your API. One good example of this is to display all the chores that are tied to a child when viewing the show action of a child. While we could use [active_models_serializers](https://www.rubydoc.info/gems/active_model_serializers), for this lab we are going to use [fast_jsonapi](https://github.com/jsonapi-serializer/jsonapi-serializer), which is much faster than `active_models_serializers`.
 
-  ```ruby
-    class Child < ApplicationRecord
-      has_many :chores
-      has_many :tasks, through: :chores
-    
-      validates_presence_of :first_name, :last_name
-    
-      scope :alphabetical, -> { order(:last_name, :first_name) }
-      scope :active, -> {where(active: true)}
-    
-      def name
-        return first_name + " " + last_name
-      end
-    
-      def points_earned
-        self.chores.done.inject(0){|sum,chore| sum += chore.task.points}
-      end 
-    end
-  ```
-  &nbsp;
-  ```ruby
-    class Task < ApplicationRecord
-      has_many :chores
-      has_many :children, through: :chores
-    
-      validates_presence_of :name
-      validates_numericality_of :points, only_integer: true, greater_than_or_equal_to: 0
-    
-      scope :alphabetical, -> { order(:name) }
-      scope :active, -> {where(active: true)}
-    end
-  ```
-  &nbsp;
-  ```ruby
-    class Chore < ApplicationRecord
-      belongs_to :child
-      belongs_to :task
-    
-      # Validations
-      validates_date :due_on
-      
-      # Scopes
-      scope :by_task, -> { joins(:task).order('tasks.name') }
-      scope :chronological, -> { order('due_on') }
-      scope :done, -> { where('completed = ?', true) }
-      scope :pending, -> { where('completed = ?', false) }
-      scope :upcoming, -> { where('due_on >= ?', Date.today) }
-      scope :past, -> { where('due_on < ?', Date.today) }
-      
-      # Other methods
-      def status
-        self.completed ? "Completed" : "Pending"
-      end
-    end
-  ```
+First of all, add the gem to your Gemfile: `gem 'fast_jsonapi'` and run `bundle install`.
 
-4. Now we will be starting to build out the controllers for the models that we just made. First, let's create a file called `children_controller.rb` in the controllers folder (you can also run `rails generate controller Children`), define the class `class ChildrenController < ApplicationController ... end` and follow along below!
+2. Now, you can actually generate some boilerplate code for your serializer, by running `rails g serializer <model_name>` so for example, `rails g serializer child` will create a new file called `child_serializer.rb` in the serializers folder in app. **Please, generate serializer files for each controller** (child, chore, and task).
 
-5. As you remember, we will not be building any views since literally all user output from a RESTful API is just JSON (no need for HTML/CSS/JS). First, let's go through the process of creating the controller for the Child model and then you will need to **create the controllers for the other 2 models**. So unlike in a normal Rails application, in a RESTful one, you will only need 5 (**index, show, create, update, and destroy**) actions instead of 7. We won't be needing the new or edit action since those were only used to display the form, and with only JSON responses, the form will no longer be needed.
-	**Note**: One thing to note here is the idea of the status code. This is especially important when developing a RESTful API to tell users of it what happened. All success type codes (ok, created, etc.) are in the 200 number ranges, and generally other error statuses are either in the 400 or 500 ranges.
-
-6. Index Action (responds to GET) is used to display all of the children that exist and its information/fields. So in this case all you need is to render all of the children objects as json.
-  
-7. Show Action (responds to GET) just like before, given a child id from the url path, it will display the information for just that child. This uses the `set_child` method to set the instance variable @child before rendering it.
-  
-8. Create Action (responds to a POST) actually creates a new child given the proper params. Using the ```child_params``` method it gets all the whitelisted params and tries to create a new child. If it properly saves, it will just render the JSON of the child that was just created and attached with a created success status code. If it fails to save, then it will respond with a JSON of all the validation errors and a unprocessably_entity error status code. You might have also noticed this new thing called `location`, this is a param in the header so that the client will be able to know where this newly created child is (in this case it's the child show page).
-  
-9. Update Action (responds to PATCH) updates the information of a child given its ID. The @child variable will be set from the `set_child` method and then be populated with the child parameters. Again it will do something similar to create where it checks if the child is valid and return the proper JSON response. 
-  
-10. Delete Action (responds to DELETE) deletes the child given its ID which is set from the `set_child` method. 
-  
-11. Lastly **don't forget to add the proper routes to the routes.rb file. `resources :children` should take care of all the routes for your children controller.**
-
-  ```ruby
-    class ChildrenController < ApplicationController
-      # Controller Code
-    
-      before_action :set_child, only: [:show, :update, :destroy]
-    
-      # GET /children
-      def index
-        @children = Child.all
-    
-        render json: @children
-      end
-    
-      # GET /children/1
-      def show
-        render json: @child
-      end
-    
-      # POST /children
-      def create
-        @child = Child.new(child_params)
-    
-        if @child.save
-          render json: @child, status: :created, location: @child
-        else
-          render json: @child.errors, status: :unprocessable_entity
-        end
-      end
-    
-      # PATCH/PUT /children/1
-      def update
-        if @child.update(child_params)
-          render json: @child
-        else
-          render json: @child.errors, status: :unprocessable_entity
-        end
-      end
-    
-      # DELETE /children/1
-      def destroy
-        @child.destroy
-      end
-    
-      private
-        # Use callbacks to share common setup or constraints between actions.
-        def set_child
-          @child = Child.find(params[:id])
-        end
-    
-        # Only allow a trusted parameter "white list" through.
-        def child_params
-          params.permit(:first_name, :last_name, :active)
-        end
-    end
-  ```
-    
-12. Now we want to test that our API actually works. Whenever we mention the word **endpoint**, it is just another way to say action of your controller since each action is an endpoint of your API that you can hit with a GET or POST request.
-    
-13. Go to `http://localhost:3000/children` and an empty array should appear. This triggers the index action with the GET request and display no children, since none have been created yet.
-    
-14. Now we should test how creating a new child. Since we can't easily send POST requests in the browser (not as easy as GET) we will be needing CURL. CURL is a command that you can run in your terminal to hit certain endpoints with GET, POST, etc. requests.
-    - Check that ```curl -X GET -H "Accept: application/json" "http://localhost:3000/children"``` from your terminal will return an empty list just like it did in the browser.
-    - Now run ```curl -X POST --data "first_name=Test&last_name=Child&active=true" -H "Accept: application/json" "http://localhost:3000/children"``` from your terminal which should return a success status.
-    - Check that it has been created by either CURLing the index action or going to the url on chrome.
-    - Feel free to test out all the other endpoints if you have time!
-
-15. Now that you already created the Children Controller, **you will need to follow the similar structure and create the controller for the Tasks and Chores Controllers**.  You can add some sample data to the system with the help of the [files found here](https://github.com/profh/ChoreTrackerAPI_populator). **Be sure to read the README for instructions on how to do this quickly.**
-
-  The controllers for Tasks and Chores and pretty identical to Children, except for fields. All of the methods are the same in structure.
-
-
-# <span class="mega-icon mega-icon-issue-opened"></span>Stop
-
-Show a TA that you have completed the first part (including constructing the API for all three models). Make sure the TA initials your sheet.
-
-* * *
-
-
-
-## Part 2 - Documenting the API using Swagger Docs/UI
-
-Now that you have created the API you will need to document it. Documentation is **crucial** for RESTful API's since there are no views tied to the application, which means there is no way for users to know what endpoints exist and what capabilities the API has. Good thing that there is an easy to way autogenerate some nice Documentation using Swagger for your API.
-
-1. There are 2 main portions of swagger documentation. There is the Swagger Doc and Swagger UI. Swagger Doc is a representation that is autogenerated to describe your API and each endpoint (which is in JSON format) and Swagger UI is the HTML/CSS/JS that is autogenerated from the Swagger Doc.
-
-1. First we need to set up swagger docs for the RESTful API application. **Include the swagger docs gem in your Gemfile** `gem 'swagger-docs'` **and then run** `bundle install`
-  
-  This gem will automatically generate the right JSON files to help document your API if provided the right things. The documentation for the gem is here: [https://github.com/richhollis/swagger-docs](https://github.com/richhollis/swagger-docs)
-
-3. Next you will need to create an initializer file for the gem (in `/config/initializers`) and call it `swagger_docs.rb`. This will tell the gem some basic information about your application and how to generate the JSON for your API. The following code should go in this `config/initializers/swagger_docs.rb` file that you just created. You won't need to fully understand what this whole thing does, but its good to know that all of the autogenerated Swagger Doc files are put in the `public/apidocs` folder. 
-
-  ```ruby
-  # config/initializers/swagger_docs.rb
-
-  class Swagger::Docs::Config
-    def self.transform_path(path, api_version)
-      # Make a distinction between the APIs and API documentation paths.
-      "apidocs/#{path}"
-    end
-  end
-
-  Swagger::Docs::Config.base_api_controller = ActionController::API 
-
-  Swagger::Docs::Config.register_apis({
-    "1.0" => {
-      # the extension used for the API
-      :api_extension_type => :json,
-      # the output location where your .json files are written to
-      :api_file_path => "public/apidocs",
-      # the URL base path to your API (make sure to change this if you are not using localhost:3000)
-      :base_path => "http://localhost:3000",
-      # if you want to delete all .json files at each generation
-      :clean_directory => false,
-      # add custom attributes to api-docs
-      :attributes => {
-        :info => {
-          "title" => "Chore Tracker API",
-          "description" => "Uses swagger ui and docs to document the ChoreTracker API"
-        }
-      }
-    }
-  })
-  ```
-
-4. Now that you have set up your swagger docs, you are ready to actually document your API. Again we are only going through documenting your Children Controller and you will need to do the rest without guidance. First, go to your `children_controller.rb` file since all the documentation that you need to add should be in that file. This is because you are only documenting each endpoint and each endpoint is only defined in the controller itself. Step by step add in documentation **within the ChildrenController class** and above the controller code (above the before_action) by following the instructions below:
-
-5. Tell the swagger-docs gem that the children controller is an API and give it a name:
-
-  ```
-  swagger_controller :children, "Children Management"
-  ```
-
-6. Document the index action by saying what it does:
-
-  ```
-  swagger_api :index do
-    summary "Fetches all Children"
-    notes "This lists all the children"
-  end
-  ```
-
-7. Document the show action. This is a bit more complicated as it requires some parameters, namely the child id in the url path. Params are defined by type (path, form, header), the name of the parameter, the type of the parameter, whether or not it is required, and the description. You can probably also see that it has 2 different responses, and this is describing what type of error response statuses can be returned from this endpoint. In this case, it will return not_found if the child id is invalid.
-
-  ```
-  swagger_api :show do
-    summary "Shows one Child"
-    param :path, :id, :integer, :required, "Child ID"
-    notes "This lists details of one child"
-    response :not_found
-  end
-  ```
-
-8. Next we need to document the create action. Just like with the show action, we need params for the `create` but this time we will also need form params to pass through describing the fields of the child including the first_name, last_name, and active. This time we won't need the not_found response, but rather the not_acceptable response if there is anything wrong with the actual creation of the child (most likely some validation error).
-  ```
-  swagger_api :create do
-    summary "Creates a new Child"
-    param :form, :first_name, :string, :required, "First name"
-    param :form, :last_name, :string, :required, "Last name"
-    param :form, :active, :boolean, :required, "Active"
-    response :not_acceptable
-  end
-  ```
-
-9. The update action is like the combination of the show and create where we need the path param of the child id and the form params to describe the child. However, for updates, none of the fields should be required as users should be able to update only the fields that they want.
-  ```
-  swagger_api :update do
-    summary "Updates an existing Child"
-    param :path, :id, :integer, :required, "Child Id"
-    param :form, :first_name, :string, :optional, "First name"
-    param :form, :last_name, :string, :optional, "Last name"
-    param :form, :active, :boolean, :optional, "Active"
-    response :not_found
-    response :not_acceptable
-  end
-  ```
-
-10. Lastly is the delete action and this is rather simple since it only needs one param.
-  ```
-  swagger_api :destroy do
-    summary "Deletes an existing Child"
-    param :path, :id, :integer, :required, "Child Id"
-    response :not_found
-   end
-  ```
-
-11. Now that you have written up the documentation for the rails API, you can generate the Swagger Docs by running the following command. You should verify that it was properly created by checking the ```public/apidocs/``` folder and seeing if it contains 2 files (api-docs.json and children.json). api-docs.json contains the general info about your API and each controller should have one json file for it. (**Note:** You might encounter something like this when you run the following: ```2 process / 3 skipped``` Just because it says skipped doesn't mean something went wrong! You can just keep on going.)
-
-  ```
-  $ rails swagger:docs
-  ```
-
-12. After you generate the Swagger Docs, your next step is to get swagger ui to display the JSON in a user-friendly manner using Swagger UI! Change your directory to the public folder:
-
-  ```
-  $ cd public/
-  ```
-
-13. Then include the Swagger UI available [here](https://github.com/cmu-is-projects/RailsSwaggerUI) in the public/ folder under a folder named api/. You should now have a folder under public/api/ where all of swagger ui files (html, css, javascript) will be. 
-
-  ```
-  $ git clone https://github.com/cmu-is-projects/RailsSwaggerUI
-  ```
-  
-	Make sure you have the api folder contains the 'index.htm' file. 
-The api folder should be as follows:
-
- ![](api.png)
-
-14. Start up your server and then go to `http://localhost:3000/api` and you should see something like this:
-
-  ![](https://github.com/495-Labs-Projects/ChoreTrackerAPI/raw/master/public/swagger_screenshot.png "Swagger UI Screenshot")
-
-15. Play around with the swagger docs and try to view, create, edit, and delete different children using the Swagger Docs/UI. This documents and makes interactions with your API endpoints much more easier and you won't need to use curl to hit an endpoint.
-
-16. Now that you created this for the children_controller, create documentation for both the **tasks_controller** and **chores_controller**, by adding in similar documentation code in the file itself. Remember to run ```rails swagger:docs``` and restart the server every time you make a change to your documentation. For additional swagger docs param types, please refer to this link: https://swagger.io/docs/specification/data-models/data-types/#numbers (Note: Create a couple of Children, Tasks, and Chores to help test out things in the next part.)
-
-# <span class="mega-icon mega-icon-issue-opened"></span> Stop
-Show a TA that you have properly created the documentation for the ChoreTrackerAPI!
-
-* * *
-
-
-
-## Part 3 - Custom Serialization
-
-1. Once you have created the barebone API for ChoreTracker and documenting it, there are a lot more things you can do to improve it and make it more usable. One main thing is serialization, which is how Rails converts a Child/Task/Chore model object to JSON. With serializers, you can truly customize how you want these objects to show up in your API. One good example of this is to display all the chores that are tied to a child when viewing the show action of a child. While we could use active_models_serializers, for this lab we are going to use fast_jsonapi, which is much faster than active_models_serializers. First of all, add the gem to your Gemfile: `gem 'fast_jsonapi'` and run `bundle install`.
-
-2. Now you can actually generate some boilerplate code for your serializer, by running `rails g serializer <model_name>` so for example, `rails g serializer child` will create a new file called `child_serializer.rb` in the serializers folder in app. **Generate serializer files for each controller** (child, chore, and task).
-
-3. By default for the child serializer you should just see the following. This means that when serializing a child object to JSON it will only display the attributes listed after "attributes". 
+3. By default for the child serializer, you should just see the following. This means that when serializing a child object to JSON it will only display the attributes listed after "attributes".
     
   ```ruby
   class ChildSerializer
@@ -349,7 +42,7 @@ Show a TA that you have properly created the documentation for the ChoreTrackerA
   end
   ```
 
-4. Let's start off by adding what we want to the ChildSerializer. In this case we want to display the id, name of the child, whether or not it is active, and the list of chores that it has. To do this, after the `:id`, also add `:name` and `:active`. The reason that name works even though the Child Model doesn't have a name attribute (only first_name and last_name) is that we had already defined a method call name in the Child Model that combines the first and last names. Next we need to get all the chores that is related to this child. To do so, we need to add a relationship, just like with the model, by writing `has_many :chores`. Your ChildSerializer should look something like the following. Now, look at the output on Swagger Docs and try to view all children.
+4. Let's start off by adding what we want to the ChildSerializer. In this case, we want to display the id, name of the child, whether or not it is active, and the list of chores that it has. To do this, after the `:id`, also add `:name` and `:active`. The reason that name works even though the Child Model doesn't have a name attribute (only first_name and last_name) is that we had already defined a method called `name` in the Child Model that combines the first and last names. Next, we need to get all the chores that is related to this child. To do so, we need to add a relationship, just like with the model, by writing `has_many :chores`. Your ChildSerializer should look something like the following. Now, look at the output on Swagger Docs and try to view all children (Note: run the rails server, then go to localhost:<your port>/api  to see the documentation).
     
   ```ruby
   class ChildSerializer
@@ -359,7 +52,7 @@ Show a TA that you have properly created the documentation for the ChoreTrackerA
   end
   ``` 
 
-5. You have probably noticed that Swagger Docs is showing much more information than what we specified in the serializer. For example, when we try to get the information of one child, we see additional attributes such as created_on. The reason for this is that we are not actually calling the serializers on our objects. Go to the children_controller and change the show action so that it looks like following. Make this similar change in all other children_controller actions (index, create, update) that render JSON objects. Check Swagger Docs to verify that it worked.
+5. You have probably noticed that Swagger Docs is showing much more information than what we specified in the serializer. For example, when we try to get the information of one child, we see additional attributes such as `created_on`. The reason for this is that we are not actually calling the serializers on our objects. Go to the `children_controller` and change the show action so that it looks like following. Make this similar change in all other children_controller actions (index, create, update) that render JSON objects. Check Swagger Docs to verify that it worked.
 
   ```ruby
   def show
@@ -367,11 +60,11 @@ Show a TA that you have properly created the documentation for the ChoreTrackerA
   end 
   ```
 
-6. Let's go onto fixing the TaskSerializer. For this follow the same idea, but we only need to display the **id**, **name**, **points** that its worth, and whether or not it is **active**.
+6. Let's go onto fixing the TaskSerializer. For this follow the same idea, but note that we only need to display the **id**, **name**, **points** that its worth, and whether or not it is **active**. 
 
-7. After that, you should go on to adding serialization to the ChoreSerializer, which should include the **id**, **child_id**, **task_id**, and **due_on**.
+7. After that, you should go onto adding serialization to the ChoreSerializer, which should include the **id**, **child_id**, **task_id**, and **due_on**.
 
-  We also want to add **Completed** to our serializer. We want this to show as "completed" or "pending" (not just true or false). For implementing `:completed` to be not a geeky True/False in the API, we can add the following method to our serializer that takes advantage of our model method:
+We also want to add an extra **Completed** attribute to our serializer. We want this attribute to show as "completed" or "pending" (not just true or false). For implementing `:completed` to be not a geeky True/False in the API, we can add the following method to our serializer that takes advantage of our model method:
 
   ```ruby
   attribute :completed do |object|
@@ -379,11 +72,11 @@ Show a TA that you have properly created the documentation for the ChoreTrackerA
   end
   ```
 
-8. Verify that your serializers worked properly by using the SwaggerDocs. Make sure that you restart your server before doing so.
+8. Verify that your serializers worked properly by using the SwaggerDocs. Make sure that you restarted your server before doing so.
 
-9. At this point, you have just very standard serialization for each of these models. Let's make ChildSerializer more interesting! It would probably be useful to include the total number of points that the child has earned (good thing we wrote this function already in the model). Include that as an attribute of the ChildSerializer. 
+9. At this point, you have just very standard serialization for each of these models. Let's make ChildSerializer more interesting! It would probably be useful to include the total number of points that the child has earned (good thing we wrote the `points_earned` function already in the model). Include that as an attribute of the ChildSerializer (as specified in the code below). 
 
-  Next, it probably makes more sense to break up the chores list into completed and unfinished chores for each child. You will need to write a custom method to do this and won't need the relationship to chores. In this case, the variable ```object``` will always represent the current object that you are trying to serialize, so we are getting all the chores tied to the specific child and running the done and pending scopes on it. You can imagine ```object``` to be similar to ```self```. After getting each of the relations, we still need to manually serialize each one using the ChoreSerializer class.
+Next, it probably makes more sense to break up the chores list into completed and unfinished chores for each child. You will need to write a custom method to do this and won't need the relationship to chores. In this case, the variable ```object``` will always represent the current object that you are trying to serialize, so we are getting all the chores tied to the specific child and running the done and pending scopes on it. You can imagine ```object``` to be similar to ```self```. After getting each of the relations, we still need to manually serialize each one using the ChoreSerializer class.
 
   ```ruby
     class ChildSerializer
@@ -409,7 +102,7 @@ Show a TA that you have properly created the documentation for the ChoreTrackerA
 
 11. Make another file in the serializers folder and call it ```chore_task_serializer.rb``` and make a new class called ```ChoreTaskSerializer```. Have this serializer give back only the `id` and `name` of the object.
 
-12. Now go to your chore_serializer and instead of displaying task_id, have it display `:task` by writing a custom serialization method called task. In this method, all you need to return is the preview version of the serialized task which includes the `:id` and `name` of the task. Call over a TA if you are having trouble with this concept! Now test if it worked by going to the /children endpoint! It should display the task id and name instead of just the task id.
+12. Now, go to your chore_serializer and instead of displaying task_id, have it display `:task` by writing a custom serialization method called `task`. In this method, all you need to return is the preview version of the serialized task which includes the `:id` and `name` of the task (from the ChoreTaskSerializer). Call over a CA if you are having trouble with this concept! Now test if it worked by going to the /children endpoint! It should display the task id and name instead of just the task id.
 
   ```ruby
   attribute :task do |object|
@@ -419,16 +112,18 @@ Show a TA that you have properly created the documentation for the ChoreTrackerA
 
 
 # <span class="mega-icon mega-icon-issue-opened"></span> Stop
-Show a TA that you have properly serialized JSON objects in the ChoreTrackerAPI!
+**Checkpoint 1**
+Show a CA that you have properly serialized JSON objects in the ChoreTrackerAPI!
 * * *
 
-
-
-## Part 4 - CORS
+## Part 2 - CORS
 
 CORS stands for Cross Origin Resource Sharing. Most web applications have CORS disabled, which means that the web app prevents JavaScript from making requests that are outside of the domain. For example, let's say that the web application is hosted on ```cmuis.net```, if CORS is disabled then Javascript code located on another domain (```testdomain.com```) can't make a request to cmuis.net. This is meant to protect malicious Javascript from making requests to your web application.
 
-However, for the purposes of an API, we want CORS to be enabled since we would like code from other domains to access our API. The only reason that the swagger docs works in hitting the API's endpoints is that the swagger docs is located in the same domain. To demonstrate that CORS isn't enabled right now, please create another HTML file and copy paste the code below:
+However, for the purposes of an API, we want CORS to be enabled since we would like code from other domains to access our API. The only reason that the swagger docs works in hitting the API's endpoints is that the swagger docs is located in the same domain. To demonstrate that CORS isn't enabled right now, please create another HTML file (let's call it ```cors_test.html```) and copy paste the code below:
+
+To create this html file, type `touch cors_test.html` in the terminal. Then, you will see the file appearing in the explorer (below config.ru).
+Make sure you replace 3000 with your port, in the url line in the code below.
 
 ```html
 <!DOCTYPE html>
@@ -457,9 +152,9 @@ However, for the purposes of an API, we want CORS to be enabled since we would l
 </html>
 ```
 
-After creating this new simple HTML page (let's call it ```cors_test.html```), just open it up. After it tries to make an AJAX request to the ```/children``` endpoint, it should alert out "Error" and if you look in the Console (Right click -> Inspect Element -> Console) there should be an error message saying "No 'Access-Control-Allow-Origin' header is present". This basically means that the API located at ```localhost:3000/children``` doesn't allow for CORS access.
+After creating this new simple HTML page , just open it up. After it tries to make an AJAX request to the ```/children``` endpoint, it should alert out "Error" and if you look in the Console (Right click -> Inspect Element -> Console) there should be an error message saying "No 'Access-Control-Allow-Origin' header is present". This basically means that the API located at ```localhost:3000/children``` doesn't allow for CORS access.
 
-1. In order to fix this for your Chore Tracker API, you will need this new gem called rack-cors (Read more about it here: https://github.com/cyu/rack-cors). Add `gem 'rack-cors'` to your Gemfile and bundle install.
+1. In order to fix this for your Chore Tracker API, you will need this new gem called `rack-cors` (Read more about it here: https://github.com/cyu/rack-cors). Add `gem 'rack-cors'` to your Gemfile and bundle install.
 
 2. Next go to the ```config/application.rb``` file and add the following code to it within the Application class at the end. Notice the code ```:methods => [:get, :post, :put]```, this is how rack-cors will be able to whitelist certain types of request. For example, if you don't want anyone from another domain to make post requests (or create new things) to your API, then remove that. If you want to allow them to make delete requests, then add it in like this: ```:methods => [:get, :post, :put, :delete]```.
 
@@ -484,6 +179,315 @@ After creating this new simple HTML page (let's call it ```cors_test.html```), j
 
 
 # <span class="mega-icon mega-icon-issue-opened"></span> Stop
-Show a TA that your API now allows for Cross Origin Requests!
+**Checkpoint 2**
+Show a CA that your API now allows for Cross Origin Requests!
 * * *
 
+# Part 3 - Filtering and Ordering
+
+One thing that we will be improving upon in this lab is filtering and ordering. This is mainly for the the index action of each controller and allows users of your API to filter out and order the list of objects. For example, if you want to get all the active tasks right now, you will have to hit the `/tasks` endpoint to get all the tasks back and then filter out the inactive ones manually using Javascript. However, a better option would be to pass in an active parameter that states what you want. So for the example, `/tasks?active=true` will get you all the active tasks, `/tasks?active=false` will get you all the inactive tasks, and `/tasks` will get you all the tasks. With the format, you can concat different filters and ordering together.
+
+1. Let's first add this feature to the children endpoint! Open up the `child.rb` model file first and notice the scopes that are present (:active and :alphabetical). :active is a filtering scope and :alphabetical is a ordering scope. In this case, we will probably need another scope called `:inactive` to be the opposite of the :active filtering scope. Add the following :inactive scope to the child model file:
+
+    ```ruby
+    scope :inactive, -> {where(active: false)}
+    ```
+
+2. Now go the ChildrenController and let's add this new active filter to the index action. In this case, the `:active` param will be the one that triggers the filter and do nothing if the param isn't present. Also the only reason that we are checking if it's equal to the string "true" is that params are all treated as strings. Copy the following code into the index action (ask a TA for help if you don't understand the logic here):
+
+    ```ruby
+    def index
+      @children = Child.all
+      if(params[:active].present?)
+        @children = params[:active] == "true" ? @children.active : @children.inactive
+      end
+
+      render json: ChildSerializer.new(@children)
+    end
+    ```
+
+3. Since there was also an `:alphabetical` ordering scope, we will need to add that to the index action too. In this case, it will behave slightly different than the filtering scope. This is because it will only alphabetically order the children if the `:alphabetical` param is present and true. Add the following right after the active filter param in the index action (**Note:** The reasons why we are checking if the param is equal to the string "true" rather than the boolean is because all params are interpreted as strings initially):
+
+    ```ruby
+    if params[:alphabetical].present? && params[:alphabetical] == "true"
+      @children = @children.alphabetical
+    end
+    ```
+
+4. Now before we test this out, we will need to add the proper params to the swagger docs. Add the following ```:query``` params to the ChildrenController's swagger docs' index action and test it out (**Note**: don't forget to run ```rails swagger:docs``` afterward):
+
+    ```ruby
+    param :query, :active, :boolean, :optional, "Filter on whether or not the child is active"
+    param :query, :alphabetical, :boolean, :optional, "Order children by alphabetical"
+    ```
+
+5. After you tested everything out for children with swagger docs, we will move on to doing the same thing for tasks and chores. Since Tasks is basically the same as Children, you will be completing the ```:active``` and ```:alphabetical``` filtering/ordering scopes on your own. (**Note**: Make sure you add the necessary scopes to the task model.)
+
+6. Chores is a bit more complicated but not that much. All the necessary scopes are there for you. You will be creating the filtering params on your own for ```:done``` and ```:upcoming``` (where ```:pending``` and ```:past``` are the opposite scopes respectively). Also, you will be creating the ordering params ```:chronological``` and ```:by_task```. 
+
+7. Make sure you add all the appropriate swagger docs to the index actions of each controller and test out the filtering/ordering params.
+
+
+# <span class="mega-icon mega-icon-issue-opened"></span>Stop
+**Checkpoint 3**
+Show a CA that you have all the filtering and ordering params working for all the controllers. 
+* * *
+
+# Part 4 - Token Authentication
+
+
+1. Now we will tackle authentication for API's since we don't want just anyone modifying the chores. (It would be a hoot to let the children just mark off their own chores regardless if they were actually done or not. Even better would be to allow children to reassign chores to siblings!) This will be slightly different from authentication for regular Rails applications mainly because the authentication will be stateless and we will be using a token (instead of an email and password). For this to work, we will first need to create a User model! Follow the specifications below and generate a new User model and run ```rails db:migrate```. Note that there is still an email and password because we still want there to be a way later on for users to retrieve their authentication token (if they forgot it) by authentication through email and password.
+    - User
+        - email (string)
+        - password_digest (string)
+        - api_key (string)
+        - active (boolean)
+
+2. For now let's fill the User model with some validations. This is pretty standard and we have already done something similar before, so just copy paste the code below to your User model.
+
+    ``` ruby
+    class User < ApplicationRecord
+      has_secure_password
+    
+      validates_presence_of :email
+      validates_uniqueness_of :email, allow_blank: true
+      validates_presence_of :password, on: :create 
+      validates_presence_of :password_confirmation, on: :create 
+      validates_confirmation_of :password, message: "does not match"
+      validates_length_of :password, minimum: 4, message: "must be at least 4 characters long", allow_blank: true
+    end
+    ```
+
+3. So the general idea of the `api_key` is so that when someone sends a GET/POST/etc. request to your API, they will also need to provide the token in a header. Your API will then try to authenticate with that token and see what authorization that user has. This means that the `api_key` needs to be unique so we will not be allowing users to change/create the api_key. Instead, we will be generating a random api_key for each user when it is created. Therefore we will write a new callback function in the model code for creating the api_key. The following is the new model code. **Please understand it before continuing, or else everything will be rather confusing!** (**Note:** Don't forget to add the ```gem 'bcrypt'``` to the Gemfile for passwords and run bundle install).
+
+    ``` ruby
+    class User < ApplicationRecord
+      has_secure_password
+    
+      validates_presence_of :email
+      validates_uniqueness_of :email, allow_blank: true
+      validates_presence_of :password, on: :create 
+      validates_presence_of :password_confirmation, on: :create 
+      validates_confirmation_of :password, message: "does not match"
+      validates_length_of :password, minimum: 4, message: "must be at least 4 characters long", allow_blank: true
+      validates_uniqueness_of :api_key
+    
+      before_create :generate_api_key
+    
+      def generate_api_key
+        begin
+          self.api_key = SecureRandom.hex
+        end while User.exists?(api_key: self.api_key)
+      end
+    end
+    ```
+
+4. Now we should create the User controller and the Swagger Docs for the controller. This should be quick since you have done this already for all the other controllers. (**Note:** make sure that the user_params method only permits these parameters because we don't want them creating the api_key: `params.permit(:email, :password, :password_confirmation, :active))` After you are done, verify that it is the same as below and make sure the create documentation has the right form parameters. **Also add the user resources to the routes.rb and run ```rails swagger:docs```**
+
+    ``` ruby
+    class UsersController < ApplicationController
+      # This is to tell the gem that this controller is an API
+      swagger_controller :users, "Users Management"
+    
+      # Each API endpoint index, show, create, etc. has to have one of these descriptions
+    
+      # This one is for the index action. The notes param is optional but helps describe what the index endpoint does
+      swagger_api :index do
+        summary "Fetches all Users"
+        notes "This lists all the users"
+      end
+    
+      # Show needs a param which is which user id to show.
+      # The param defines that it is in the path, and that it is the User's ID
+      # The response params here define what type of error responses can be returned back to the user from your API. In this case, the error responses are 404 not_found and not_acceptable.
+      swagger_api :show do
+        summary "Shows one User"
+        param :path, :id, :integer, :required, "User ID"
+        notes "This lists details of one user"
+        response :not_found
+        response :not_acceptable
+      end
+    
+      # Create doesn't take in the user id, but rather the required fields for a user (namely first_name and last_name)
+      # Instead of a path param, this uses form params and defines them as required
+      swagger_api :create do
+        summary "Creates a new User"
+        param :form, :email, :string, :required, "Email"
+        param :form, :password, :password, :required, "Password"
+        param :form, :password_confirmation, :password, :required, "Password Confirmation"
+        param :form, :active, :boolean, :required, "active"
+        response :not_acceptable
+      end
+    
+      # Lastly destroy is just like the rest and just takes in the param path for user id. 
+      swagger_api :destroy do
+        summary "Deletes an existing User"
+        param :path, :id, :integer, :required, "User Id"
+        response :not_found
+        response :not_acceptable
+      end
+    
+    
+      # Controller Code
+    
+      before_action :set_user, only: [:show, :update, :destroy]
+    
+      # GET /users
+      def index
+        @users = User.all
+    
+        render json: @users
+      end
+    
+      # GET /users/1
+      def show
+        render json: @user
+      end
+    
+      # POST /users
+      def create
+        @user = User.new(user_params)
+    
+        if @user.save
+          render json: @user, status: :created, location: @user
+        else
+          render json: @user.errors, status: :unprocessable_entity
+        end
+      end
+    
+      # DELETE /users/1
+      def destroy
+        @user.destroy
+      end
+    
+      private
+        # Use callbacks to share common setup or constraints between actions.
+        def set_user
+          @user = User.find(params[:id])
+        end
+    
+        # Only allow a trusted parameter "white list" through.
+        def user_params
+          params.permit(:email, :password, :password_confirmation, :active)
+        end
+    end
+    ```
+
+5. We should also create a new serializer for users since we really don't want to display the password_digest, but we do need to show the api_key. **Make sure to call the serializers in the controller actions.**
+
+6. We can now start up the rails server and test out whether or not our user model creation worked! Create a new user using Swagger and **save the api_key from the response**, this is **very important** for the next steps!
+
+7. Next we need to actually implement the authentication with the tokens so that nobody can modify anything in the system without having a proper token. You will need to add the following to the ApplicationController. This uses the built-in ```authenticate_with_http_token``` method which checks if it is a valid token and if anything fails, it will just render the Bad Credentials JSON. How it works is that every request that comes through has to have an Authorization header with the specified token and that is what rails will check in order to authenticate. Also for simplicity, we authenticated for all actions in all controllers by putting a before_action in the ApplicationController.
+
+    ```ruby
+    class ApplicationController < ActionController::API
+      include ActionController::HttpAuthentication::Token::ControllerMethods
+    
+      before_action :authenticate
+    
+      protected
+    
+      def authenticate
+        authenticate_token || render_unauthorized
+      end
+    
+      def authenticate_token
+        authenticate_with_http_token do |token, options|
+          @current_user = User.find_by(api_key: token)
+        end
+      end
+    
+      def render_unauthorized(realm = "Application")
+        self.headers["WWW-Authenticate"] = %(Token realm="#{realm.gsub(/"/, "")}")
+        render json: {error: "Bad Credentials"}, status: :unauthorized
+      end
+    end
+    ```
+
+8. If you restart the server now and try to use Swagger to test out any of the endpoints in any controller, you will be faced with the Bad Credentials message. To fix this we need to change the swagger docs so that it will pass along the token in the headers of every request. There are two ways to do this, one way is to add another header param to every single endpoint; another way is to add a setup method for swagger docs to pick up. In order to do this, all we need to do is write this singleton class within in the ApplicationController class so that it will affect all of the other controllers. This code goes to all the subclasses of ApplicationController and then adds the header param to each of the actions. (**Note:** Make sure you put this within the ApplicationController class)
+
+    ```ruby
+    class << self
+      def inherited(subclass)
+        super
+        subclass.class_eval do
+          setup_basic_api_documentation
+        end
+      end
+    
+      private
+      def setup_basic_api_documentation
+        [:index, :show, :create, :update, :delete].each do |api_action|
+          swagger_api api_action do
+            param :header, 'Authorization', :string, :required, 'Authentication token in the format of: Token token=<token>'
+          end
+        end
+      end
+    end
+    ```
+
+9. Make sure you run ```rails swagger:docs```, start up the server and check out the swagger docs. For each endpoint, there should be a header param. In order to successfully hit any of the endpoints, you will need to fill out this param too. This is a little bit more complicated as before since rails has its own format/way to do things. In the input box, enter ```Token token=<api_key>``` and replace `<api_key>` with the key from the user you created before. Now check that the API works with the token authentication!
+
+10. Now that you have the token authentication implemented for each of the endpoints, there's no way for someone to access the API if they forgot their token. However, a user will most likely remember their email/password and forget their api_key, which is why we will need to create one more endpoint where users will be able to retrieve their token with their correct email/password. Let's call this endpoint ```/token```. **Ask a TA if you don't understand the purpose of this new endpoint!** First, you will need to add a helper method to your user model (`user.rb`) that authenticates the user by email and password:
+
+    ```ruby
+    # login by email address
+    def self.authenticate(email, password)
+      find_by_email(email).try(:authenticate, password)
+    end
+    ```
+
+11. Now add the following to the ```application_controller.rb``` file/class along with all the other authentication code (**Note:** You will need to replace the the before_action code with the one below). We are using something called Basic Http Authentication which is provided by rails, that authenticates with email and password. This `/token` endpoint will not be authenticated with the api_key, but rather with email and password. As mentioned before, this endpoint will return the user JSON, which contains the api_key. **Once someone enters their email/password and uses this endpoint to retrieve their api_key, they can then use the api_key to authenticate with all the other endpoints.**
+
+    ```ruby
+    include ActionController::HttpAuthentication::Basic::ControllerMethods
+
+    before_action :authenticate, except: [:token]
+
+    # A method to handle initial authentication
+    def token
+      authenticate_username_password || render_unauthorized
+    end
+
+    protected
+
+    def authenticate_username_password
+      authenticate_or_request_with_http_basic do |email, password|
+        user = User.authenticate(email, password)
+        if user
+          render json: user
+        end
+      end
+    end
+    ```
+
+12. After adding this don't forget to add all the token action to the ```routes.rb``` file. (GET request to `/token` will use the `application#token` action) 
+
+13. Now that you have an endpoint in the application controller, you will need to add swagger docs to it as well!
+
+    ```ruby
+    swagger_controller :application, "Application Management"
+
+    swagger_api :token do |api|
+      summary "Authenticate with email and password to get token"
+      param :header, "Authorization", :string, :required, "Email and password in the format of: Basic {Base64.encode64('email:password')}"
+    end
+    ```
+
+14. **Please understand the following before continuing.** Here's an explanation of the format of how you would interact with the `/token` endpoint, since we will need to do everything the Rails way. Just like with Token auth, the way they intake the email/password is through the ```Authorization``` header and it needs to be in the format of `Basic <Base64.encode64('email:password')>`. Let's say that the email and password for a user is "test@example.com" and "password" respectively (and the encoded email:password is `dGVzdEBleGFtcGxlLmNvbTpwYXNzd29yZA==\n`) then the full header should be `Authorization: Basic dGVzdEBleGFtcGxlLmNvbTpwYXNzd29yZA==\n`
+
+
+15. After running ```rails swagger:docs``` you can test out the token endpoint to see if you are able to get the user's token with the email and password. (**Note**: as mentioned before the format of the Authorization header is supposed to be ```Basic <encoded_base64_value>``` (without the <>)). You should use irb or rails console to get the Base64 value: 
+
+
+```ruby
+require 'base64'
+#put in your user's email and password
+Base64.encode64('email:password')
+```
+
+
+# <span class="mega-icon mega-icon-issue-opened"></span>Stop
+**Checkpoint 4**
+Show a CA that you have all the filtering and ordering params working for all the controllers. 
+* * *
